@@ -20,7 +20,7 @@ namespace SteamStoreBot
         {
             var services = new ServiceCollection();
             services.AddSingleton<ITelegramBotClient>(
-                new TelegramBotClient("8019910175:AAGfio_nEwoNqz3NzNjlZ6sbjKVCKQUkn1c")
+                new TelegramBotClient("8019910175:AAHFfXbbOOCHPS77UVn3H925g6gEG0ZkZiQ")
             );
             services.AddSingleton<ApiClient>();
             services.AddSingleton<IUserService, UserService>();

@@ -37,10 +37,28 @@ namespace SteamStoreBot.Services
                     {
                         new KeyboardButton("Пошук по назві"),
                         new KeyboardButton("Пошук по жанру"),
+                        new KeyboardButton("Пошук по бюджету"),
                     },
-                    new[] { new KeyboardButton("Пошук по бюджету") },
+                    new[] { new KeyboardButton("⬅️ Назад") },
                 }
             );
+        }
+
+        public static ReplyKeyboardMarkup GetWishlistKeyboard()
+        {
+            return new ReplyKeyboardMarkup(
+                new[]
+                {
+                    new[]
+                    {
+                        new KeyboardButton("❌ Видалити гру з вішліста"),
+                        new KeyboardButton("⬅️ Назад"),
+                    },
+                }
+            )
+            {
+                ResizeKeyboard = true,
+            };
         }
     }
 }

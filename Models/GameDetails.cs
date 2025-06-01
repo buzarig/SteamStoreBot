@@ -7,7 +7,6 @@ using Telegram.Bot.Types.ReplyMarkups;
 
 namespace SteamStoreBot.Models
 {
-    /// Модель для зберігання деталей гри та генерації відповідного контенту.
     public class GameDetails
     {
         public int AppId { get; set; }
@@ -18,7 +17,7 @@ namespace SteamStoreBot.Models
         public bool HasUaLocalization { get; set; }
         public string MetacriticScore { get; set; }
         public int ReviewsCount { get; set; }
-        public List<string> Genres { get; set; }
+        public List<string> Genres { get; set; } = new List<string>();
         public string Hashtags { get; set; }
         public string StoreUrl { get; set; }
         public string TrailerUrl { get; set; }
@@ -30,49 +29,118 @@ namespace SteamStoreBot.Models
             IEnumerable<int> wishlistGameIds
         )
         {
-            var priceOverview = dataJson.GetProperty("price_overview");
-            var original = priceOverview.GetProperty("initial_formatted").GetString();
-            var final = priceOverview.GetProperty("final_formatted").GetString();
-            var discount = priceOverview.GetProperty("discount_percent").GetInt32();
-            string priceText = discount > 0 ? $"{original} ➔ {final} (-{discount}% )" : final;
+            string priceText = "Недоступна";
+            if (
+                dataJson.TryGetProperty("price_overview", out var priceOverview)
+                && priceOverview.ValueKind == JsonValueKind.Object
+            )
+            {
+                if (priceOverview.TryGetProperty("final_formatted", out var finalProp))
+                {
+                    var final = finalProp.GetString();
+                    var original = priceOverview.TryGetProperty("initial_formatted", out var o)
+                        ? o.GetString()
+                        : null;
+                    var discount = priceOverview.TryGetProperty("discount_percent", out var d)
+                        ? d.GetInt32()
+                        : 0;
 
-            string shortDesc =
-                dataJson.GetProperty("short_description").GetString() ?? string.Empty;
-            var minHtml =
-                dataJson.GetProperty("pc_requirements").GetProperty("minimum").GetString()
-                ?? string.Empty;
-            var minReq = Regex.Replace(minHtml, "<.*?>", string.Empty).Trim();
+                    if (!string.IsNullOrEmpty(final))
+                    {
+                        priceText =
+                            discount > 0 && !string.IsNullOrEmpty(original)
+                                ? $"{original} ➔ {final} (-{discount}%)"
+                                : final;
+                    }
+                }
+            }
 
-            var langs = dataJson.GetProperty("supported_languages").GetString() ?? string.Empty;
-            bool hasUa = langs.IndexOf("ukrainian", StringComparison.OrdinalIgnoreCase) >= 0;
+            string shortDesc = dataJson.TryGetProperty("short_description", out var descProp)
+                ? descProp.GetString() ?? string.Empty
+                : string.Empty;
 
-            string metac =
-                dataJson.TryGetProperty("metacritic", out var mc)
-                && mc.TryGetProperty("score", out var ms)
-                    ? ms.GetInt32().ToString()
-                    : "-";
-            int reviews = dataJson.GetProperty("recommendations").GetProperty("total").GetInt32();
+            string minReq = string.Empty;
+            if (
+                dataJson.TryGetProperty("pc_requirements", out var reqs)
+                && reqs.TryGetProperty("minimum", out var min)
+            )
+            {
+                var minHtml = min.GetString() ?? string.Empty;
+                minReq = Regex.Replace(minHtml, "<.*?>", string.Empty).Trim();
+            }
 
-            var genres = dataJson
-                .GetProperty("genres")
-                .EnumerateArray()
-                .Select(x => x.GetProperty("description").GetString())
-                .Where(x => !string.IsNullOrEmpty(x))
-                .ToList();
-            string hashtags = string.Join(
-                " ",
-                genres.Select(g => "#" + Regex.Replace(g.ToLower(), "[^0-9a-z]", string.Empty))
-            );
+            var langs = dataJson.TryGetProperty("supported_languages", out var langProp)
+                ? langProp.GetString() ?? string.Empty
+                : string.Empty;
+            langs = Regex.Replace(langs, "<.*?>", string.Empty);
+            bool hasUa = langs.IndexOf("українська", StringComparison.OrdinalIgnoreCase) >= 0;
+
+            string metac = "-";
+            if (
+                dataJson.TryGetProperty("metacritic", out var meta)
+                && meta.TryGetProperty("score", out var score)
+            )
+                metac = score.GetInt32().ToString();
+
+            int reviews = 0;
+            if (
+                dataJson.TryGetProperty("recommendations", out var rec)
+                && rec.TryGetProperty("total", out var total)
+            )
+                reviews = total.GetInt32();
+
+            var genres = new List<string>();
+            if (dataJson.TryGetProperty("genres", out var genreArray))
+            {
+                genres = genreArray
+                    .EnumerateArray()
+                    .Select(x => x.TryGetProperty("description", out var g) ? g.GetString() : null)
+                    .Where(x => !string.IsNullOrEmpty(x))
+                    .ToList();
+            }
+
+            var categoryDescriptions = new List<string>();
+            if (dataJson.TryGetProperty("categories", out var categoriesJson))
+            {
+                categoryDescriptions = categoriesJson
+                    .EnumerateArray()
+                    .Select(x =>
+                        x.TryGetProperty("description", out var d)
+                            ? d.GetString() ?? string.Empty
+                            : string.Empty
+                    )
+                    .Where(x => !string.IsNullOrEmpty(x))
+                    .ToList();
+            }
+
+            var genreTags = genres
+                .Select(g => "#" + Regex.Replace(g.ToLower(), "[^a-z0-9]", string.Empty))
+                .Where(tag => tag.Length > 1);
+
+            var categoryTags = categoryDescriptions
+                .Select(c => "#" + Regex.Replace(c.ToLower(), "[^a-z0-9]", string.Empty))
+                .Where(tag => tag.Length > 1);
+
+            string hashtags = string.Join(" ", genreTags.Concat(categoryTags).Distinct());
 
             string storeUrl = $"https://store.steampowered.com/app/{appId}";
+
             string trailer = null;
             if (dataJson.TryGetProperty("movies", out var movies) && movies.GetArrayLength() > 0)
-                trailer = movies[0].GetProperty("mp4").GetProperty("max").GetString();
+            {
+                if (
+                    movies[0].TryGetProperty("mp4", out var mp4)
+                    && mp4.TryGetProperty("max", out var url)
+                )
+                    trailer = url.GetString();
+            }
 
             return new GameDetails
             {
                 AppId = appId,
-                Name = dataJson.GetProperty("name").GetString() ?? string.Empty,
+                Name = dataJson.TryGetProperty("name", out var name)
+                    ? name.GetString() ?? string.Empty
+                    : string.Empty,
                 PriceText = priceText,
                 ShortDescription = shortDesc,
                 MinRequirements = minReq,
@@ -116,16 +184,18 @@ namespace SteamStoreBot.Models
             {
                 new[] { InlineKeyboardButton.WithUrl("🔗 Відкрити в Steam", StoreUrl) },
             };
+
             if (!string.IsNullOrEmpty(TrailerUrl))
                 buttons.Add(
                     new[] { InlineKeyboardButton.WithUrl("🎞 Переглянути трейлер", TrailerUrl) }
                 );
 
             var wishlistBtn = IsInWishlist
-                ? InlineKeyboardButton.WithCallbackData("✅ У вішліст", "noop")
+                ? InlineKeyboardButton.WithCallbackData("✅ У вішлісті", "noop")
                 : InlineKeyboardButton.WithCallbackData("➕ Вішліст", $"add_to_wishlist_{AppId}");
 
             buttons.Add(new[] { wishlistBtn });
+
             return new InlineKeyboardMarkup(buttons);
         }
 

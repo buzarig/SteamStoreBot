@@ -35,6 +35,18 @@ namespace SteamStoreBot.Services
             }
         }
 
+        public async Task RemoveFromWishlistAsync(long chatId, int appId)
+        {
+            var s = await GetSettingsAsync(chatId);
+            if (!s.Wishlist.Contains(appId))
+                throw new InvalidOperationException(
+                    $"Гра з ID {appId} відсутня у вашому вішлісті."
+                );
+
+            s.Wishlist.Remove(appId);
+            await _api.UpdateUserSettingsAsync(s);
+        }
+
         public async Task ToggleNewsSubscriptionAsync(long chatId, bool enable)
         {
             var s = await GetSettingsAsync(chatId);

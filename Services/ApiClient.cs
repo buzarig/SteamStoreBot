@@ -31,10 +31,17 @@ namespace SteamStoreBot.Services
             );
         }
 
-        public async Task<Dictionary<string, object>> GetGameDetailsAsync(int appId)
+        public async Task<Dictionary<string, object>> GetGameDetailsAsync(
+            int appId,
+            string cc = "UA",
+            string lang = "ukrainian"
+        )
         {
-            var response = await _httpClient.GetAsync($"api/search/details?appId={appId}");
+            var response = await _httpClient.GetAsync(
+                $"api/search/details?appId={appId}&cc={cc}&l={lang}"
+            );
             response.EnsureSuccessStatusCode();
+
             var json = await response.Content.ReadAsStringAsync();
             return JsonSerializer.Deserialize<Dictionary<string, object>>(
                 json,

@@ -172,6 +172,7 @@
     <Compile Include="Models\GameDetails.cs" />
     <Compile Include="Models\GameSearchResult.cs" />
     <Compile Include="Models\UserSettings.cs" />
+    <Compile Include="Models\WishlistGame.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Services\ApiClient.cs" />
