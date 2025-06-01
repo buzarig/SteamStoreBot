@@ -45,7 +45,7 @@ namespace SteamStoreBot
                 cts.Token
             );
 
-            Console.WriteLine("Бот запущений. Натисніть Enter для зупинки...");
+            Console.WriteLine("Бот запущений.");
             Console.ReadLine();
             cts.Cancel();
         }
