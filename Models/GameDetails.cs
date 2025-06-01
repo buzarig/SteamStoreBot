@@ -30,6 +30,7 @@ namespace SteamStoreBot.Models
         )
         {
             string priceText = "Недоступна";
+
             if (
                 dataJson.TryGetProperty("price_overview", out var priceOverview)
                 && priceOverview.ValueKind == JsonValueKind.Object
@@ -53,6 +54,12 @@ namespace SteamStoreBot.Models
                                 : final;
                     }
                 }
+            }
+            else if (
+                dataJson.TryGetProperty("is_free", out var isFreeProp) && isFreeProp.GetBoolean()
+            )
+            {
+                priceText = "Безкоштовно";
             }
 
             string shortDesc = dataJson.TryGetProperty("short_description", out var descProp)
@@ -178,7 +185,10 @@ namespace SteamStoreBot.Models
             return string.Join("\n", lines);
         }
 
-        public InlineKeyboardMarkup ToInlineKeyboard()
+        public InlineKeyboardMarkup ToInlineKeyboard(
+            string currency = "UA",
+            IEnumerable<int> subscribedGameIds = null
+        )
         {
             var buttons = new List<InlineKeyboardButton[]>
             {
@@ -192,9 +202,58 @@ namespace SteamStoreBot.Models
 
             var wishlistBtn = IsInWishlist
                 ? InlineKeyboardButton.WithCallbackData("✅ У вішлісті", "noop")
-                : InlineKeyboardButton.WithCallbackData("➕ Вішліст", $"add_to_wishlist_{AppId}");
+                : InlineKeyboardButton.WithCallbackData(
+                    "➕ Вішліст",
+                    $"addwishlist:{AppId}:{currency.ToLower()}"
+                );
+
+            var isSubscribed = subscribedGameIds?.Contains(AppId) == true;
+
+            var subscribeBtn = isSubscribed
+                ? InlineKeyboardButton.WithCallbackData(
+                    "🔕 Скасувати підписку",
+                    $"unsubscribe_news:{AppId}"
+                )
+                : InlineKeyboardButton.WithCallbackData(
+                    "🔔 Підписатись на новини",
+                    $"subscribe_news:{AppId}"
+                );
 
             buttons.Add(new[] { wishlistBtn });
+
+            buttons.Add(new[] { subscribeBtn });
+
+            if (
+                PriceText.IndexOf("Недоступна", StringComparison.OrdinalIgnoreCase) < 0
+                && PriceText.IndexOf("Free", StringComparison.OrdinalIgnoreCase) < 0
+                && PriceText.IndexOf("безкоштовно", StringComparison.OrdinalIgnoreCase) < 0
+            )
+            {
+                if (currency == "UA")
+                {
+                    buttons.Add(
+                        new[]
+                        {
+                            InlineKeyboardButton.WithCallbackData(
+                                "💲 Показати ціну в $",
+                                $"convert_to_usd_{AppId}"
+                            ),
+                        }
+                    );
+                }
+                else
+                {
+                    buttons.Add(
+                        new[]
+                        {
+                            InlineKeyboardButton.WithCallbackData(
+                                "💴 Показати в грн",
+                                $"convert_to_uah_{AppId}"
+                            ),
+                        }
+                    );
+                }
+            }
 
             return new InlineKeyboardMarkup(buttons);
         }

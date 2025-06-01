@@ -11,8 +11,9 @@ namespace SteamStoreBot.Services
     {
         Task<UserSettings> GetSettingsAsync(long chatId);
         Task AddToWishlistAsync(long chatId, int appId);
-        Task ToggleNewsSubscriptionAsync(long chatId, bool enable);
+        Task SubscribeToGameNewsAsync(long chatId, int appId);
         Task ToggleSalesSubscriptionAsync(long chatId, bool enable);
         Task RemoveFromWishlistAsync(long chatId, int appId);
+        Task<List<UserSettings>> GetAllUsersAsync();
     }
 }

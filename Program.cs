@@ -24,6 +24,7 @@ namespace SteamStoreBot
             );
             services.AddSingleton<ApiClient>();
             services.AddSingleton<IUserService, UserService>();
+            services.AddSingleton<NotificationService>();
             services.AddSingleton<CommandHandler>();
 
             var serviceProvider = services.BuildServiceProvider();
@@ -45,7 +46,12 @@ namespace SteamStoreBot
                 cts.Token
             );
 
-            Console.WriteLine("Бот запущений.");
+            var notifier = serviceProvider.GetRequiredService<NotificationService>();
+
+            // Запускаємо планувальник (о 20:00 знижки, о 21:00 новини)
+            _ = Task.Run(() => notifier.RunSchedulerAsync());
+
+            Console.WriteLine("Бот запущений. Натисніть Enter для зупинки...");
             Console.ReadLine();
             cts.Cancel();
         }

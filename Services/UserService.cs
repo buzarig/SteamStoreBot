@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using SteamStoreBot.Models;
@@ -47,11 +48,15 @@ namespace SteamStoreBot.Services
             await _api.UpdateUserSettingsAsync(s);
         }
 
-        public async Task ToggleNewsSubscriptionAsync(long chatId, bool enable)
+        public async Task SubscribeToGameNewsAsync(long chatId, int appId)
         {
             var s = await GetSettingsAsync(chatId);
-            s.SubscriptionOnNews = enable;
-            await _api.UpdateUserSettingsAsync(s);
+
+            if (!s.SubscribedGames.Contains(appId))
+            {
+                s.SubscribedGames.Add(appId);
+                await _api.UpdateUserSettingsAsync(s);
+            }
         }
 
         public async Task ToggleSalesSubscriptionAsync(long chatId, bool enable)
@@ -59,6 +64,11 @@ namespace SteamStoreBot.Services
             var s = await GetSettingsAsync(chatId);
             s.SubscriptionOnSales = enable;
             await _api.UpdateUserSettingsAsync(s);
+        }
+
+        public async Task<List<UserSettings>> GetAllUsersAsync()
+        {
+            return await _api.GetAllUsersAsync();
         }
     }
 }

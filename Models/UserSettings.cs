@@ -1,5 +1,4 @@
-﻿// SteamStoreBot/Models/UserSettings.cs  (Bot)
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 namespace SteamStoreBot.Models
 {
@@ -7,7 +6,7 @@ namespace SteamStoreBot.Models
     {
         public long ChatId { get; set; }
         public List<int> Wishlist { get; set; } = new List<int>();
-        public bool SubscriptionOnNews { get; set; }
         public bool SubscriptionOnSales { get; set; }
+        public List<int> SubscribedGames { get; set; } = new List<int>();
     }
 }

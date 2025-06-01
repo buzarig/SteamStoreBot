@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -73,13 +75,21 @@ namespace SteamStoreBot.Services
             var messageId = cb.Message.MessageId;
             var data = cb.Data;
 
-            if (data.StartsWith("add_to_wishlist_"))
+            if (data.StartsWith("addwishlist:"))
             {
-                var appId = int.Parse(data.Substring("add_to_wishlist_".Length));
+                var parts = data.Split(':');
+                if (parts.Length != 3)
+                    return;
+
+                if (!int.TryParse(parts[1], out var appId))
+                    return;
+
+                var currency = parts[2].ToUpper();
+
                 await _userService.AddToWishlistAsync(chatId, appId);
 
                 var settings = await _userService.GetSettingsAsync(chatId);
-                var details = await _apiClient.GetGameDetailsAsync(appId);
+                var details = await _apiClient.GetGameDetailsAsync(appId, currency, "ukrainian");
 
                 if (
                     details != null
@@ -88,14 +98,94 @@ namespace SteamStoreBot.Services
                 )
                 {
                     var gameDetails = GameDetails.FromJson(json, appId, settings.Wishlist);
-                    var updatedMarkup = gameDetails.ToInlineKeyboard();
+                    var updatedMarkup = gameDetails.ToInlineKeyboard(currency);
 
-                    await _botClient.EditMessageReplyMarkup(
+                    await _botClient.EditMessageText(
                         chatId: chatId,
                         messageId: messageId,
+                        text: gameDetails.ToHtmlCaption(),
+                        parseMode: ParseMode.Html,
                         replyMarkup: updatedMarkup,
                         cancellationToken: token
                     );
+                }
+            }
+            else if (data.StartsWith("subscribe_news:"))
+            {
+                var appIdStr = data.Substring("subscribe_news:".Length);
+                if (int.TryParse(appIdStr, out int appId))
+                {
+                    await _userService.SubscribeToGameNewsAsync(chatId, appId);
+
+                    var settings = await _userService.GetSettingsAsync(chatId);
+                    var details = await _apiClient.GetGameDetailsAsync(appId);
+
+                    if (
+                        details != null
+                        && details.TryGetValue("data", out var raw)
+                        && raw is JsonElement json
+                    )
+                    {
+                        var game = GameDetails.FromJson(json, appId, settings.Wishlist);
+
+                        var markup = game.ToInlineKeyboard("UA", settings.SubscribedGames);
+                        await _botClient.EditMessageReplyMarkup(
+                            chatId,
+                            cb.Message.MessageId,
+                            replyMarkup: markup,
+                            cancellationToken: token
+                        );
+
+                        await _botClient.AnswerCallbackQuery(
+                            cb.Id,
+                            "✅ Підписка активна!",
+                            cancellationToken: token
+                        );
+                    }
+                }
+            }
+            else if (data.StartsWith("unsubscribe_news:"))
+            {
+                var appIdStr = data.Substring("unsubscribe_news:".Length);
+                if (int.TryParse(appIdStr, out int appId))
+                {
+                    var user = await _userService.GetSettingsAsync(chatId);
+                    if (user.SubscribedGames.Remove(appId))
+                    {
+                        await _apiClient.UpdateUserSettingsAsync(user);
+
+                        var details = await _apiClient.GetGameDetailsAsync(appId);
+                        if (
+                            details != null
+                            && details.TryGetValue("data", out var raw)
+                            && raw is JsonElement json
+                        )
+                        {
+                            var game = GameDetails.FromJson(json, appId, user.Wishlist);
+                            var markup = game.ToInlineKeyboard("UA", user.SubscribedGames);
+
+                            await _botClient.EditMessageReplyMarkup(
+                                chatId,
+                                cb.Message.MessageId,
+                                replyMarkup: markup,
+                                cancellationToken: token
+                            );
+
+                            await _botClient.AnswerCallbackQuery(
+                                cb.Id,
+                                "🔕 Підписку скасовано",
+                                cancellationToken: token
+                            );
+                        }
+                    }
+                    else
+                    {
+                        await _botClient.AnswerCallbackQuery(
+                            cb.Id,
+                            "Ви не були підписані",
+                            cancellationToken: token
+                        );
+                    }
                 }
             }
             else if (data.StartsWith("convert_to_usd_"))
@@ -113,9 +203,8 @@ namespace SteamStoreBot.Services
                 {
                     var gameDetails = GameDetails.FromJson(json, appId, settings.Wishlist);
 
-                    // ⚠️ Замінюємо кнопку на зворотню
-                    var markup = gameDetails.ToInlineKeyboard().InlineKeyboard.ToList();
-                    markup.RemoveAt(markup.Count - 1); // видаляємо останню кнопку (поточну)
+                    var markup = gameDetails.ToInlineKeyboard("US").InlineKeyboard.ToList();
+                    markup.RemoveAt(markup.Count - 1);
                     markup.Add(
                         new[]
                         {
@@ -152,7 +241,7 @@ namespace SteamStoreBot.Services
                 {
                     var gameDetails = GameDetails.FromJson(json, appId, settings.Wishlist);
 
-                    var markup = gameDetails.ToInlineKeyboard().InlineKeyboard.ToList();
+                    var markup = gameDetails.ToInlineKeyboard("UA").InlineKeyboard.ToList();
                     markup.RemoveAt(markup.Count - 1);
                     markup.Add(
                         new[]
@@ -174,6 +263,16 @@ namespace SteamStoreBot.Services
                     );
                 }
             }
+            else if (data == "subscribe_sales")
+            {
+                await _userService.ToggleSalesSubscriptionAsync(chatId, true);
+                await _botClient.AnswerCallbackQuery(cb.Id, "✅ Ви підписались на знижки");
+            }
+            else if (data == "unsubscribe_sales")
+            {
+                await _userService.ToggleSalesSubscriptionAsync(chatId, false);
+                await _botClient.AnswerCallbackQuery(cb.Id, "🔕 Ви відписались від знижок");
+            }
         }
 
         private async Task HandleUserStateAsync(
@@ -188,14 +287,30 @@ namespace SteamStoreBot.Services
             switch (state)
             {
                 case "WaitingForName":
-                    var games = await _apiClient.SearchGamesAsync(message);
-                    if (!games.Any())
+                    List<GameSearchResult> games;
+                    try
+                    {
+                        games = await _apiClient.SearchGamesAsync(message);
+                    }
+                    catch (HttpRequestException)
                     {
                         await _botClient.SendMessage(
-                            chatId: chatId,
-                            text: "Ігор не знайдено.",
+                            chatId,
+                            "❗ Сталася помилка при пошуку гри. Спробуйте іншу назву або перевірте правильність введення.",
                             cancellationToken: cancellationToken
                         );
+                        _userStates[chatId] = "WaitingForName";
+                        return;
+                    }
+
+                    if (games == null || !games.Any())
+                    {
+                        await _botClient.SendMessage(
+                            chatId,
+                            "😕 Гру з такою назвою не знайдено. Спробуйте ще раз.",
+                            cancellationToken: cancellationToken
+                        );
+                        _userStates[chatId] = "WaitingForName";
                         return;
                     }
 
@@ -220,14 +335,52 @@ namespace SteamStoreBot.Services
                     break;
 
                 case "WaitingForGenre":
-                    // ЗАГЛУШКА
+                {
+                    var genreSearch = message.Trim();
+
+                    if (string.IsNullOrWhiteSpace(genreSearch) || genreSearch.Length < 2)
+                    {
+                        await _botClient.SendMessage(
+                            chatId,
+                            "❗️ Введіть жанр гри англійською. Наприклад: RPG, Action, Indie, MMO",
+                            cancellationToken: cancellationToken
+                        );
+                        _userStates[chatId] = "WaitingForGenre";
+                        return;
+                    }
+
+                    var genreGames = await _apiClient.GetGamesByGenreSpyAsync(genreSearch);
+
+                    if (genreGames == null || !genreGames.Any())
+                    {
+                        await _botClient.SendMessage(
+                            chatId,
+                            $"😕 Ігор з жанром \"{genreSearch}\" не знайдено. Спробуйте інший жанр. Наприклад: Strategy, Racing.",
+                            cancellationToken: cancellationToken
+                        );
+                        _userStates[chatId] = "WaitingForGenre";
+                        return;
+                    }
+
+                    var genreGameButtons = genreGames
+                        .Take(10)
+                        .Select(g => new KeyboardButton($"{g.Name} (ID: {g.Id})"))
+                        .Select(b => new[] { b })
+                        .ToList();
+
                     await _botClient.SendMessage(
-                        chatId: chatId,
-                        text: "Пошук по жанру поки не реалізований.",
-                        replyMarkup: KeyboardManager.GetMainKeyboard(),
+                        chatId,
+                        $"🎮 Ось ігри у жанрі {genreSearch}:",
+                        replyMarkup: new ReplyKeyboardMarkup(genreGameButtons)
+                        {
+                            ResizeKeyboard = true,
+                        },
                         cancellationToken: cancellationToken
                     );
+
+                    _userStates[chatId] = "WaitingForGameSelection";
                     break;
+                }
 
                 case "WaitingForRemoveId":
                     _userStates.Remove(chatId);
@@ -267,14 +420,56 @@ namespace SteamStoreBot.Services
                     break;
 
                 case "WaitingForBudget":
-                    // ЗАГЛУШКА
+                {
+                    _userStates.Remove(chatId);
+
+                    if (
+                        !double.TryParse(
+                            message.Trim().Replace(',', '.'),
+                            System.Globalization.NumberStyles.Any,
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            out var maxDollars
+                        )
+                    )
+                    {
+                        await _botClient.SendMessage(
+                            chatId,
+                            "❗ Введіть коректну суму в доларах (наприклад: 1.99 або 0.5).",
+                            cancellationToken: cancellationToken
+                        );
+                        _userStates[chatId] = "WaitingForBudget";
+                        return;
+                    }
+
+                    var budgetGames = await _apiClient.GetGamesByBudgetSpyAsync(maxDollars);
+
+                    if (!budgetGames.Any())
+                    {
+                        await _botClient.SendMessage(
+                            chatId,
+                            "😕 Ігор у цьому бюджеті не знайдено. Спробуйте вказати більший ліміт.",
+                            cancellationToken: cancellationToken
+                        );
+                        _userStates[chatId] = "WaitingForBudget";
+                        return;
+                    }
+
+                    var gameButtons = budgetGames
+                        .Take(10)
+                        .Select(g => new KeyboardButton($"{g.Name} (ID: {g.Id})"))
+                        .Select(b => new[] { b })
+                        .ToList();
+
                     await _botClient.SendMessage(
-                        chatId: chatId,
-                        text: "Пошук за бюджетом поки не реалізований.",
-                        replyMarkup: KeyboardManager.GetMainKeyboard(),
+                        chatId,
+                        $"🎮 Ось ігри до ${maxDollars:F2}:",
+                        replyMarkup: new ReplyKeyboardMarkup(gameButtons) { ResizeKeyboard = true },
                         cancellationToken: cancellationToken
                     );
+
+                    _userStates[chatId] = "WaitingForGameSelection";
                     break;
+                }
 
                 case "WaitingForGameSelection":
                     if (_userMessageToDelete.TryGetValue(chatId, out var msgId))
@@ -300,6 +495,45 @@ namespace SteamStoreBot.Services
                         cancellationToken: cancellationToken
                     );
                     break;
+
+                case "WaitingForUnsubscribeId":
+                {
+                    if (int.TryParse(message.Trim(), out var unsubId))
+                    {
+                        var user = await _userService.GetSettingsAsync(chatId);
+
+                        if (user.SubscribedGames.Remove(unsubId))
+                        {
+                            await _apiClient.UpdateUserSettingsAsync(user);
+
+                            await _botClient.SendMessage(
+                                chatId,
+                                $"🔕 Ви відписались від новин гри з ID {unsubId}.",
+                                replyMarkup: KeyboardManager.GetMainKeyboard(),
+                                cancellationToken: cancellationToken
+                            );
+                        }
+                        else
+                        {
+                            await _botClient.SendMessage(
+                                chatId,
+                                "❌ Ви не підписані на новини цієї гри.",
+                                replyMarkup: KeyboardManager.GetMainKeyboard(),
+                                cancellationToken: cancellationToken
+                            );
+                        }
+                    }
+                    else
+                    {
+                        await _botClient.SendMessage(
+                            chatId,
+                            "❗ Некоректний ID. Спробуйте ще раз або натисніть ⬅️ Назад.",
+                            replyMarkup: KeyboardManager.GetMainKeyboard(),
+                            cancellationToken: cancellationToken
+                        );
+                    }
+                    break;
+                }
             }
         }
 
@@ -376,6 +610,114 @@ namespace SteamStoreBot.Services
                     );
                     break;
 
+                case "Підписка на новини":
+                {
+                    var user = await _userService.GetSettingsAsync(chatId);
+
+                    if (!user.SubscribedGames.Any())
+                    {
+                        await _botClient.SendMessage(
+                            chatId,
+                            "❗ Ви ще не підписані на новини жодної гри.",
+                            replyMarkup: KeyboardManager.GetMainKeyboard(),
+                            cancellationToken: cancellationToken
+                        );
+                        return;
+                    }
+
+                    var sb = new StringBuilder("📬 Ви підписані на новини цих ігор:\n\n");
+
+                    foreach (var appId in user.SubscribedGames)
+                    {
+                        var details = await _apiClient.GetGameDetailsAsync(appId);
+                        if (details.TryGetValue("data", out var raw) && raw is JsonElement json)
+                        {
+                            var name = json.GetProperty("name").GetString();
+                            sb.AppendLine($"▪️ {name} (ID: {appId})");
+                        }
+                        else
+                        {
+                            sb.AppendLine($"▪️ Гра з ID {appId}");
+                        }
+                    }
+
+                    await _botClient.SendMessage(
+                        chatId,
+                        sb.ToString(),
+                        replyMarkup: KeyboardManager.GetSubscriptionKeyboard(),
+                        cancellationToken: cancellationToken
+                    );
+                    break;
+                }
+
+                case "❌ Відписатись від гри":
+                    await _botClient.SendMessage(
+                        chatId,
+                        "Введіть <b>ID гри</b>, від новин якої хочете відписатись:",
+                        parseMode: ParseMode.Html,
+                        replyMarkup: new ReplyKeyboardRemove(),
+                        cancellationToken: cancellationToken
+                    );
+                    _userStates[chatId] = "WaitingForUnsubscribeId";
+                    break;
+
+                case "Щоденні знижки":
+                {
+                    var games = await _apiClient.GetDiscountedGamesAsync();
+
+                    if (!games.Any())
+                    {
+                        await _botClient.SendMessage(
+                            chatId,
+                            "😕 Сьогодні немає ігор зі знижками.",
+                            cancellationToken: cancellationToken
+                        );
+                        return;
+                    }
+
+                    var lines = games
+                        .Select(g => $"▪️ {g.Name} (ID: {g.Id}) – {g.Discount}% знижки")
+                        .ToList();
+
+                    var text = "🔥 <b>ТОП знижок сьогодні:</b>\n\n" + string.Join("\n", lines);
+
+                    var user = await _userService.GetSettingsAsync(chatId);
+
+                    var markup = new InlineKeyboardMarkup(
+                        new[]
+                        {
+                            new[]
+                            {
+                                InlineKeyboardButton.WithCallbackData(
+                                    user.SubscriptionOnSales
+                                        ? "🔕 Відписатися від знижок"
+                                        : "🔔 Підписатися на знижки",
+                                    user.SubscriptionOnSales
+                                        ? "unsubscribe_sales"
+                                        : "subscribe_sales"
+                                ),
+                            },
+                        }
+                    );
+
+                    await _botClient.SendMessage(
+                        chatId,
+                        text,
+                        parseMode: ParseMode.Html,
+                        replyMarkup: markup,
+                        cancellationToken: cancellationToken
+                    );
+
+                    await _botClient.SendMessage(
+                        chatId,
+                        "⬅️ Повернутись в меню:",
+                        replyMarkup: KeyboardManager.GetDiscountsKeyboard(),
+                        cancellationToken: cancellationToken
+                    );
+
+                    break;
+                }
+
                 case "Пошук ігор":
                     await _botClient.SendMessage(
                         chatId: chatId,
@@ -398,7 +740,7 @@ namespace SteamStoreBot.Services
                 case "Пошук по жанру":
                     await _botClient.SendMessage(
                         chatId: chatId,
-                        text: "Введіть жанр:",
+                        text: "📚 Введіть жанр англійською мовою, наприклад:\n\n▫ RPG\n▫ Action\n▫ Indie\n▫ Strategy\n▫ Simulation\n▫ MMO\n\n🔁 Якщо не знаєш що ввести — спробуй RPG або Action.",
                         replyMarkup: new ReplyKeyboardRemove(),
                         cancellationToken: cancellationToken
                     );
@@ -408,7 +750,7 @@ namespace SteamStoreBot.Services
                 case "Пошук по бюджету":
                     await _botClient.SendMessage(
                         chatId: chatId,
-                        text: "Введіть бюджет у гривнях:",
+                        text: "💰 Введіть бюджет у доларах (наприклад: 1.5, 3.99, 0.49):",
                         replyMarkup: new ReplyKeyboardRemove(),
                         cancellationToken: cancellationToken
                     );
@@ -466,11 +808,13 @@ namespace SteamStoreBot.Services
 
             var details = GameDetails.FromJson(json, appId, wishlist);
 
+            var subscribed = settings.SubscribedGames ?? new List<int>();
+
             await _botClient.SendMessage(
                 chatId: chatId,
                 text: details.ToHtmlCaption(),
                 parseMode: ParseMode.Html,
-                replyMarkup: details.ToInlineKeyboard(),
+                replyMarkup: details.ToInlineKeyboard("UA", subscribed),
                 cancellationToken: cancellationToken
             );
 

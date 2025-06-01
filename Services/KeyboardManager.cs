@@ -60,5 +60,30 @@ namespace SteamStoreBot.Services
                 ResizeKeyboard = true,
             };
         }
+
+        public static ReplyKeyboardMarkup GetSubscriptionKeyboard()
+        {
+            return new ReplyKeyboardMarkup(
+                new[]
+                {
+                    new[]
+                    {
+                        new KeyboardButton("❌ Відписатись від гри"),
+                        new KeyboardButton("⬅️ Назад"),
+                    },
+                }
+            )
+            {
+                ResizeKeyboard = true,
+            };
+        }
+
+        public static ReplyKeyboardMarkup GetDiscountsKeyboard()
+        {
+            return new ReplyKeyboardMarkup(new[] { new[] { new KeyboardButton("⬅️ Назад") } })
+            {
+                ResizeKeyboard = true,
+            };
+        }
     }
 }
