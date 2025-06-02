@@ -1,78 +1,94 @@
 ﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using SteamStoreBot.Services;
 using Telegram.Bot;
-using Telegram.Bot.Polling;
-using Telegram.Bot.Types;
-using Telegram.Bot.Types.Enums;
 
 namespace SteamStoreBot
 {
     internal class Program
     {
-        private static ITelegramBotClient _botClient;
-        private static ReceiverOptions _receiverOptions;
-        private static CommandHandler _commandHandler;
-
-        static void Main(string[] args)
+        public static async Task Main(string[] args)
         {
-            var services = new ServiceCollection();
-            services.AddSingleton<ITelegramBotClient>(
-                new TelegramBotClient("8019910175:AAHFfXbbOOCHPS77UVn3H925g6gEG0ZkZiQ")
-            );
-            services.AddSingleton<ApiClient>();
-            services.AddSingleton<IUserService, UserService>();
-            services.AddSingleton<NotificationService>();
-            services.AddSingleton<CommandHandler>();
+            var configuration = new ConfigurationBuilder()
+                .SetBasePath(AppContext.BaseDirectory)
+                .AddJsonFile("botConfig.json", optional: false, reloadOnChange: true)
+                .Build();
 
-            var serviceProvider = services.BuildServiceProvider();
+            var host = Host.CreateDefaultBuilder(args)
+                .ConfigureAppConfiguration((hostingContext, config) => { })
+                .ConfigureServices(
+                    (context, services) =>
+                    {
+                        services.AddSingleton<IConfiguration>(configuration);
 
-            _botClient = serviceProvider.GetRequiredService<ITelegramBotClient>();
-            _commandHandler = serviceProvider.GetRequiredService<CommandHandler>();
+                        var apiBaseUrl = configuration["Api:BaseUrl"];
+                        services.AddHttpClient<ApiClient>(client =>
+                        {
+                            client.BaseAddress = new Uri(apiBaseUrl);
+                            client.Timeout = TimeSpan.FromSeconds(30);
+                        });
+
+                        var botToken = configuration["TelegramBot:Token"];
+                        if (string.IsNullOrWhiteSpace(botToken))
+                        {
+                            throw new InvalidOperationException(
+                                "Не знайдено TelegramBot:Token в botConfig.json"
+                            );
+                        }
+
+                        services.AddSingleton<ITelegramBotClient>(_ => new TelegramBotClient(
+                            botToken
+                        ));
+
+                        services.AddSingleton<IUserService, UserService>();
+                        services.AddSingleton<CommandHandler>();
+                        services.AddSingleton<NotificationService>();
+                    }
+                )
+                .UseConsoleLifetime()
+                .Build();
+
+            var servicesProvider = host.Services;
+            var botClient = servicesProvider.GetRequiredService<ITelegramBotClient>();
+            var commandHandler = servicesProvider.GetRequiredService<CommandHandler>();
+            var notificationService = servicesProvider.GetRequiredService<NotificationService>();
 
             var cts = new CancellationTokenSource();
-            _receiverOptions = new ReceiverOptions
+            var receiverOptions = new Telegram.Bot.Polling.ReceiverOptions
             {
-                AllowedUpdates = Array.Empty<UpdateType>(),
+                AllowedUpdates = Array.Empty<Telegram.Bot.Types.Enums.UpdateType>(),
                 DropPendingUpdates = true,
             };
 
-            _botClient.StartReceiving(
-                HandleUpdateAsync,
-                HandleErrorAsync,
-                _receiverOptions,
+            botClient.StartReceiving(
+                (bot, update, token) => commandHandler.HandleCommandAsync(update, token),
+                (bot, ex, token) =>
+                {
+                    Console.WriteLine($"[Telegram Error] {ex.Message}");
+                    return Task.CompletedTask;
+                },
+                receiverOptions,
+                cancellationToken: cts.Token
+            );
+
+            Console.WriteLine("Бот запущено. Натисніть Enter для зупинки...");
+
+            _ = Task.Run(
+                () =>
+                {
+                    return notificationService.RunSchedulerAsync();
+                },
                 cts.Token
             );
 
-            var notifier = serviceProvider.GetRequiredService<NotificationService>();
-
-            // Запускаємо планувальник (о 20:00 знижки, о 21:00 новини)
-            _ = Task.Run(() => notifier.RunSchedulerAsync());
-
-            Console.WriteLine("Бот запущений. Натисніть Enter для зупинки...");
             Console.ReadLine();
             cts.Cancel();
-        }
 
-        private static async Task HandleUpdateAsync(
-            ITelegramBotClient botClient,
-            Update update,
-            CancellationToken cancellationToken
-        )
-        {
-            await _commandHandler.HandleCommandAsync(update, cancellationToken);
-        }
-
-        private static Task HandleErrorAsync(
-            ITelegramBotClient botClient,
-            Exception exception,
-            CancellationToken cancellationToken
-        )
-        {
-            Console.WriteLine($"Помилка: {exception.Message}");
-            return Task.CompletedTask;
+            await Task.Delay(500);
         }
     }
 }

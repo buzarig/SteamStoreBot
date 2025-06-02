@@ -13,9 +13,9 @@ namespace SteamStoreBot.Services
     {
         private readonly HttpClient _httpClient;
 
-        public ApiClient()
+        public ApiClient(HttpClient httpClient)
         {
-            _httpClient = new HttpClient { BaseAddress = new Uri("https://localhost:7272/") };
+            _httpClient = httpClient;
         }
 
         public async Task<List<GameSearchResult>> SearchGamesAsync(string name)
@@ -75,7 +75,8 @@ namespace SteamStoreBot.Services
 
         public async Task<List<GameSearchResult>> GetGamesByGenreSpyAsync(string genre)
         {
-            var url = $"api/search/spy-genre?genre={Uri.EscapeDataString(genre)}";
+            var url =
+                $"api/search/spy-genre?genre={Uri.EscapeDataString(genre)}&minRating=90&minVotes=2000";
             var response = await _httpClient.GetAsync(url);
             response.EnsureSuccessStatusCode();
 
@@ -91,7 +92,7 @@ namespace SteamStoreBot.Services
         public async Task<List<GameSearchResult>> GetGamesByBudgetSpyAsync(double maxDollars)
         {
             var url =
-                $"api/search/spy-budget?max={maxDollars.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+                $"api/search/spy-budget?max={maxDollars.ToString(System.Globalization.CultureInfo.InvariantCulture)}&minRating=70";
             var response = await _httpClient.GetAsync(url);
             response.EnsureSuccessStatusCode();
 

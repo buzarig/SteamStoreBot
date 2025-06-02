@@ -212,11 +212,11 @@ namespace SteamStoreBot.Models
             var subscribeBtn = isSubscribed
                 ? InlineKeyboardButton.WithCallbackData(
                     "🔕 Скасувати підписку",
-                    $"unsubscribe_news:{AppId}"
+                    $"unsubscribe_news:{AppId}:{currency}"
                 )
                 : InlineKeyboardButton.WithCallbackData(
                     "🔔 Підписатись на новини",
-                    $"subscribe_news:{AppId}"
+                    $"subscribe_news:{AppId}:{currency}"
                 );
 
             buttons.Add(new[] { wishlistBtn });

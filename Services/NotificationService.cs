@@ -1,9 +1,7 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using SteamStoreBot.Models;
 using Telegram.Bot;
 using Telegram.Bot.Types.Enums;
 
@@ -73,20 +71,20 @@ namespace SteamStoreBot.Services
             {
                 try
                 {
-                    var now = DateTime.Now;
-                    if (now - lastDiscountRun >= TimeSpan.FromMinutes(30))
-                    {
-                        Console.WriteLine("📤 Запуск розсилки знижок...");
-                        await SendTopDiscountsAsync();
-                        lastDiscountRun = DateTime.Now;
-                    }
+                    //    var now = DateTime.Now;
+                    //    if (now - lastDiscountRun >= TimeSpan.FromMinutes(30))
+                    //    {
+                    //        Console.WriteLine("📤 Запуск розсилки знижок...");
+                    //        await SendTopDiscountsAsync();
+                    //        lastDiscountRun = DateTime.Now;
+                    //    }
 
-                    if (now - lastNewsRun >= TimeSpan.FromHours(1))
-                    {
-                        Console.WriteLine("📰 Запуск розсилки новин...");
-                        await SendDlcNewsAsync();
-                        lastNewsRun = DateTime.Now;
-                    }
+                    //    if (now - lastNewsRun >= TimeSpan.FromHours(1))
+                    //    {
+                    //        Console.WriteLine("📰 Запуск розсилки новин...");
+                    //        await SendDlcNewsAsync();
+                    //        lastNewsRun = DateTime.Now;
+                    //    }
                 }
                 catch (Exception ex)
                 {
