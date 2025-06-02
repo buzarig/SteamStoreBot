@@ -15,7 +15,8 @@ namespace SteamStoreBot
         {
             var configuration = new ConfigurationBuilder()
                 .SetBasePath(AppContext.BaseDirectory)
-                .AddJsonFile("botConfig.json", optional: false, reloadOnChange: true)
+                .AddJsonFile("botConfig.json", optional: true, reloadOnChange: true)
+                .AddEnvironmentVariables()
                 .Build();
 
             var host = Host.CreateDefaultBuilder(args)
@@ -36,7 +37,8 @@ namespace SteamStoreBot
                         if (string.IsNullOrWhiteSpace(botToken))
                         {
                             throw new InvalidOperationException(
-                                "Не знайдено TelegramBot:Token в botConfig.json"
+                                "Не знайдено TelegramBot:Token — "
+                                    + "попередньо задайте його у botConfig.json або через змінну середовища TELEGRAMBOT__TOKEN"
                             );
                         }
 
