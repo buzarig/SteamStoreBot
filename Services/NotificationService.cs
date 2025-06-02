@@ -24,44 +24,6 @@ namespace SteamStoreBot.Services
             _bot = bot;
         }
 
-        //public async Task RunSchedulerAsync()
-        //{
-        //    bool isTestMode = true;
-
-        //    while (true)
-        //    {
-        //        if (isTestMode)
-        //        {
-        //            await SendTopDiscountsAsync();
-        //            await SendDlcNewsAsync();
-        //            await Task.Delay(TimeSpan.FromSeconds(30));
-        //        }
-        //        else
-        //        {
-        //            var now = DateTime.Now;
-        //            var salesTime = new TimeSpan(20, 0, 0);
-        //            var newsTime = new TimeSpan(21, 0, 0);
-
-        //            var nextSales = DateTime.Today.AddDays(now.TimeOfDay > salesTime ? 1 : 0).Add(salesTime);
-        //            var nextNews = DateTime.Today.AddDays(now.TimeOfDay > newsTime ? 1 : 0).Add(newsTime);
-
-        //            var delayToSales = nextSales - now;
-        //            var delayToNews = nextNews - now;
-
-        //            if (delayToSales <= delayToNews)
-        //            {
-        //                await Task.Delay(delayToSales);
-        //                await SendTopDiscountsAsync();
-        //            }
-        //            else
-        //            {
-        //                await Task.Delay(delayToNews);
-        //                await SendDlcNewsAsync();
-        //            }
-        //        }
-        //    }
-        //}
-
         public async Task RunSchedulerAsync()
         {
             DateTime lastDiscountRun = DateTime.Now.AddMinutes(-30);
@@ -71,20 +33,20 @@ namespace SteamStoreBot.Services
             {
                 try
                 {
-                    //    var now = DateTime.Now;
-                    //    if (now - lastDiscountRun >= TimeSpan.FromMinutes(30))
-                    //    {
-                    //        Console.WriteLine("📤 Запуск розсилки знижок...");
-                    //        await SendTopDiscountsAsync();
-                    //        lastDiscountRun = DateTime.Now;
-                    //    }
+                    var now = DateTime.Now;
+                    if (now - lastDiscountRun >= TimeSpan.FromMinutes(30))
+                    {
+                        Console.WriteLine("📤 Запуск розсилки знижок...");
+                        await SendTopDiscountsAsync();
+                        lastDiscountRun = DateTime.Now;
+                    }
 
-                    //    if (now - lastNewsRun >= TimeSpan.FromHours(1))
-                    //    {
-                    //        Console.WriteLine("📰 Запуск розсилки новин...");
-                    //        await SendDlcNewsAsync();
-                    //        lastNewsRun = DateTime.Now;
-                    //    }
+                    if (now - lastNewsRun >= TimeSpan.FromHours(1))
+                    {
+                        Console.WriteLine("📰 Запуск розсилки новин...");
+                        await SendDlcNewsAsync();
+                        lastNewsRun = DateTime.Now;
+                    }
                 }
                 catch (Exception ex)
                 {
