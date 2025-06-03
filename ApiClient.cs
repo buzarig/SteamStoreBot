@@ -7,7 +7,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using SteamStoreBot.Models;
 
-namespace SteamStoreBot.Services
+namespace SteamStoreBot
 {
     public class ApiClient
     {

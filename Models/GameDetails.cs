@@ -164,6 +164,21 @@ namespace SteamStoreBot.Models
 
         public string ToHtmlCaption()
         {
+            string minReq = MinRequirements?.Trim() ?? string.Empty;
+
+            // Прибираємо можливий префікс «Мінімальні:»
+            const string prefix1 = "Мінімальні:";
+            if (minReq.StartsWith(prefix1, StringComparison.OrdinalIgnoreCase))
+            {
+                minReq = minReq.Substring(prefix1.Length).Trim();
+            }
+
+            const string prefix2 = "Мін. вимоги:";
+            if (minReq.StartsWith(prefix2, StringComparison.OrdinalIgnoreCase))
+            {
+                minReq = minReq.Substring(prefix2.Length).Trim();
+            }
+
             var lines = new List<string>
             {
                 $"🎮 <b>Гра:</b> {Escape(Name)}",
@@ -172,16 +187,22 @@ namespace SteamStoreBot.Models
                 "",
                 $"📝 <b>Опис:</b> {Escape(ShortDescription)}",
                 "",
-                $"🖥️ <b>Мін. вимоги:</b> {Escape(MinRequirements)}",
-                "",
-                $"🌐 <b>Локалізація UA:</b> {(HasUaLocalization ? "✅" : "❌")}",
-                "",
-                $"⭐ <b>Metacritic:</b> {Escape(MetacriticScore)}",
-                $"💬 <b>Відгуки:</b> {ReviewsCount} user ratings",
-                "",
-                $"📂 <b>Жанри:</b> {Escape(string.Join(", ", Genres))}",
-                $"🔖 {Hashtags}",
             };
+
+            if (!string.IsNullOrWhiteSpace(minReq))
+            {
+                lines.Add($"🖥️ <b>Мін. вимоги:</b> {Escape(minReq)}");
+                lines.Add("");
+            }
+
+            lines.Add($"🌐 <b>Локалізація UA:</b> {(HasUaLocalization ? "✅" : "❌")}");
+            lines.Add("");
+            lines.Add($"⭐ <b>Metacritic:</b> {Escape(MetacriticScore)}");
+            lines.Add($"💬 <b>Відгуки:</b> {ReviewsCount} user ratings");
+            lines.Add("");
+            lines.Add($"📂 <b>Жанри:</b> {Escape(string.Join(", ", Genres))}");
+            lines.Add($"🔖 {Hashtags}");
+
             return string.Join("\n", lines);
         }
 

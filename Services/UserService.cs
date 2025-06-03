@@ -2,10 +2,13 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
+using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 using SteamStoreBot.Models;
 
-namespace SteamStoreBot.Services
+namespace SteamStoreBot.Utils
 {
     public class UserService : IUserService
     {
@@ -64,6 +67,11 @@ namespace SteamStoreBot.Services
             var s = await GetSettingsAsync(chatId);
             s.SubscriptionOnSales = enable;
             await _api.UpdateUserSettingsAsync(s);
+        }
+
+        public async Task UpdateUserSettingsAsync(UserSettings settings)
+        {
+            await _api.UpdateUserSettingsAsync(settings);
         }
 
         public async Task<List<UserSettings>> GetAllUsersAsync()

@@ -4,8 +4,12 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using SteamStoreBot.Services;
+using SteamStoreBot; // тут лежить ApiClient (namespace має бути тим самим)
+using SteamStoreBot.Services; // для UserService, CommandHandler, тощо
+using SteamStoreBot.Utils; // для KeyboardManager (якщо потрібен десь)
 using Telegram.Bot;
+using Telegram.Bot.Polling;
+using Telegram.Bot.Types.Enums;
 
 namespace SteamStoreBot
 {
@@ -13,61 +17,85 @@ namespace SteamStoreBot
     {
         public static async Task Main(string[] args)
         {
+            // 1) Зчитуємо конфіг (botConfig.json + ENV-змінні)
             var configuration = new ConfigurationBuilder()
                 .SetBasePath(AppContext.BaseDirectory)
                 .AddJsonFile("botConfig.json", optional: true, reloadOnChange: true)
                 .AddEnvironmentVariables()
                 .Build();
 
+            // Отримуємо основні дані з конфігу
+            var botToken = configuration["TelegramBot:Token"];
+            var apiBaseUrl = configuration["Api:BaseUrl"];
+
+            if (string.IsNullOrWhiteSpace(botToken))
+            {
+                throw new InvalidOperationException(
+                    "Не знайдено TelegramBot:Token — задайте його в botConfig.json або через ENV VARIABLE TELEGRAMBOT__TOKEN"
+                );
+            }
+
+            // 2) Налаштовуємо Host та DI Container
             var host = Host.CreateDefaultBuilder(args)
-                .ConfigureAppConfiguration((hostingContext, config) => { })
                 .ConfigureServices(
                     (context, services) =>
                     {
+                        // Додаємо IConfiguration, якщо десь потрібно прямо інжектити конфіг
                         services.AddSingleton<IConfiguration>(configuration);
 
-                        var apiBaseUrl = configuration["Api:BaseUrl"];
+                        // HttpClient для ApiClient
                         services.AddHttpClient<ApiClient>(client =>
                         {
                             client.BaseAddress = new Uri(apiBaseUrl);
                             client.Timeout = TimeSpan.FromSeconds(30);
                         });
 
-                        var botToken = configuration["TelegramBot:Token"];
-                        if (string.IsNullOrWhiteSpace(botToken))
-                        {
-                            throw new InvalidOperationException(
-                                "Не знайдено TelegramBot:Token — "
-                                    + "попередньо задайте його у botConfig.json або через змінну середовища TELEGRAMBOT__TOKEN"
-                            );
-                        }
-
+                        // Telegram BotClient
                         services.AddSingleton<ITelegramBotClient>(_ => new TelegramBotClient(
                             botToken
                         ));
 
+                        // UserService (реалізація IUserService)
                         services.AddSingleton<IUserService, UserService>();
-                        services.AddSingleton<CommandHandler>();
+
+                        // Інші «сервіси» бота
+                        services.AddSingleton<CallbackHandler>();
+                        services.AddSingleton<StateHandler>();
+                        services.AddSingleton<TextCommandHandler>();
                         services.AddSingleton<NotificationService>();
+
+                        // **Фасад**: ICommandHandler → CommandHandler
+                        services.AddSingleton<ICommandHandler, CommandHandler>();
+                        // Якщо раптом потрібно діставати сам CommandHandler (а не через інтерфейс), можна додати:
+                        // services.AddSingleton<CommandHandler>(sp => (CommandHandler)sp.GetRequiredService<ICommandHandler>());
                     }
                 )
                 .UseConsoleLifetime()
                 .Build();
 
+            // 3) Отримуємо з DI необхідні екземпляри
             var servicesProvider = host.Services;
+
+            // Ми реєстрували саме ICommandHandler, тому дістанемо його через інтерфейс:
+            var commandHandler = servicesProvider.GetRequiredService<ICommandHandler>();
+            // Якщо ж у вас строка StartReceiving все ще викликає CommandHandler.HandleCommandAsync,
+            // змініть її на HandleAsync (або відповідно адаптуйте).
             var botClient = servicesProvider.GetRequiredService<ITelegramBotClient>();
-            var commandHandler = servicesProvider.GetRequiredService<CommandHandler>();
             var notificationService = servicesProvider.GetRequiredService<NotificationService>();
 
+            // 4) Запускаємо Telegram-Polling
             var cts = new CancellationTokenSource();
-            var receiverOptions = new Telegram.Bot.Polling.ReceiverOptions
+            var receiverOptions = new ReceiverOptions
             {
-                AllowedUpdates = Array.Empty<Telegram.Bot.Types.Enums.UpdateType>(),
+                // Вказуємо, які саме оновлення ми хочемо обробляти
+                AllowedUpdates = new UpdateType[] { UpdateType.Message, UpdateType.CallbackQuery },
                 DropPendingUpdates = true,
             };
 
             botClient.StartReceiving(
-                (bot, update, token) => commandHandler.HandleCommandAsync(update, token),
+                // Перший аргумент — делегат, який бере update → передаємо у наш фасад ICommandHandler
+                (bot, update, token) => commandHandler.HandleAsync(update, token),
+                // Другий аргумент — обробник помилок
                 (bot, ex, token) =>
                 {
                     Console.WriteLine($"[Telegram Error] {ex.Message}");
@@ -79,17 +107,14 @@ namespace SteamStoreBot
 
             Console.WriteLine("Бот запущено. Натисніть Enter для зупинки...");
 
-            _ = Task.Run(
-                () =>
-                {
-                    return notificationService.RunSchedulerAsync();
-                },
-                cts.Token
-            );
+            // 5) Запускаємо NotificationService у фоні (якщо він у вас запускається віч-loop’ом)
+            _ = Task.Run(() => notificationService.RunSchedulerAsync(), cts.Token);
 
+            // Чекаємо, доки користувач натисне Enter
             Console.ReadLine();
             cts.Cancel();
 
+            // Невелика затримка, щоб усі цикли встигли «прибратися»
             await Task.Delay(500);
         }
     }

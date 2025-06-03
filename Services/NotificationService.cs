@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 using Telegram.Bot;
 using Telegram.Bot.Types.Enums;
 
-namespace SteamStoreBot.Services
+namespace SteamStoreBot.Utils
 {
     internal class NotificationService
     {
