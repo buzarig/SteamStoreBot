@@ -268,6 +268,7 @@
     <Compile Include="Services\UserService.cs" />
   </ItemGroup>
   <ItemGroup>
+    <None Include=".dockerignore" />
     <None Include="App.config" />
     <None Include="botConfig.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
