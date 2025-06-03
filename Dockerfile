@@ -1,27 +1,42 @@
-# ------------------ BUILD STAGE ------------------
-FROM mcr.microsoft.com/dotnet/sdk:7.0 AS build
-WORKDIR /src
+#############################################
+#   1) BUILD STAGE: РІРёРєРѕСЂРёСЃС‚РѕРІСѓС”РјРѕ РѕР±СЂР°Р· С–Р·  #
+#      .NET Framework SDK 4.8 РґР»СЏ Р·Р±С–СЂРєРё     #
+#############################################
+FROM mcr.microsoft.com/dotnet/framework/sdk:4.8 AS build
+SHELL ["powershell", "-Command"] 
+WORKDIR C:\src
 
-# 1) Копіюємо csproj-файл і відновлюємо залежності
+# 1.1) РљРѕРїС–СЋС”РјРѕ С„Р°Р№Р» .csproj (Р°Р±Рѕ solution), С‰РѕР± РІС–РґРЅРѕРІРёС‚Рё NuGet-РїР°РєРµС‚Рё
+#      РЇРєС‰Рѕ Сѓ РІР°СЃ С” Solution (*.sln), Р·Р°РјС–РЅС–С‚СЊ РЅР° РЅСЊРѕРіРѕ. 
 COPY ["SteamStoreBot.csproj", "./"]
-RUN dotnet restore "./SteamStoreBot.csproj"
 
-# 2) Копіюємо решту файлів проєкту
+# 1.2) Р’С–РґРЅРѕРІР»СЋС”РјРѕ РїР°РєРµС‚Рё. 
+#      РЇРєС‰Рѕ РІРё РІРёРєРѕСЂРёСЃС‚РѕРІСѓС”С‚Рµ packages.config в†’ nuget restore, 
+#      Р°Р±Рѕ СЏРєС‰Рѕ PackageReference Сѓ .csproj в†’ msbuild /t:Restore
+RUN nuget restore "SteamStoreBot.csproj"
+
+# 1.3) РљРѕРїС–СЋС”РјРѕ РІРµСЃСЊ РІРёС…С–РґРЅРёР№ РєРѕРґ Сѓ РєРѕРЅС‚РµР№РЅРµСЂ
 COPY . .
 
-# 3) Публікуємо у Release-конфігурації
-RUN dotnet publish "SteamStoreBot.csproj" -c Release -o /app/publish
+# 1.4) Р—Р±РёСЂР°С”РјРѕ Р№ РїСѓР±Р»С–РєСѓС”РјРѕ ReleaseвЂђРІРµСЂСЃС–СЋ Сѓ C:\app\publish
+#      РўСѓС‚ РІРёРєРѕСЂРёСЃС‚РѕРІСѓС”РјРѕ MSBuild РґР»СЏ .NET Framework 4.8
+RUN msbuild "SteamStoreBot.csproj" /p:Configuration=Release /p:OutputPath="C:\app\publish"
 
-# ------------------ RUNTIME STAGE ------------------
-FROM mcr.microsoft.com/dotnet/runtime:7.0 AS runtime
-WORKDIR /app
+#################################################
+#   2) RUNTIME STAGE: Р»РµРіС€РёР№ runtimeвЂђРѕР±СЂР°Р·      #
+#      С–Р· .NET Framework 4.8 Р»РёС€Рµ РґР»СЏ Р·Р°РїСѓСЃРєСѓ   #
+#################################################
+FROM mcr.microsoft.com/dotnet/framework/runtime:4.8
+SHELL ["powershell", "-Command"]
+WORKDIR C:\app
 
-# 4) Копіюємо зібрані артефакти з попереднього етапу
-COPY --from=build /app/publish ./ 
+# 2.1) РљРѕРїС–СЋС”РјРѕ Р·С–Р±СЂР°РЅС– С„Р°Р№Р»Рё Р· РїРѕРїРµСЂРµРґРЅСЊРѕС— СЃС‚Р°РґС–С—
+COPY --from=build C:\app\publish\* .\
 
-# 5) Оскільки бот читає конфігурацію з botConfig.json, переконаємося, що файл присутній у фінальному образі.
-# Якщо ви хочете підкладати його через змінні оточення, цю копію можна прибрати, 
-# але якщо він містить лише шаблон (без токена), можна лишити.
+# 2.2) РЇРєС‰Рѕ РІР°С€ Р±РѕС‚ С‡РёС‚Р°С” botConfig.json, РїРµСЂРµРєРѕРЅР°Р№С‚РµСЃСЏ, С‰Рѕ 
+#      РІРё Р№РѕРіРѕ СЃРєРѕРїС–СЋРІР°Р»Рё СЂР°Р·РѕРј С–Р· РІРёС…С–РґРЅРёРјРё С„Р°Р№Р»Р°РјРё Сѓ C:\app\publish. 
+#      РЇРєС‰Рѕ config-JSON РІРё Р±СѓРґРµС‚Рµ РїРµСЂРµРґР°РІР°С‚Рё С‡РµСЂРµР· ENV, РјРѕР¶РµС‚Рµ РЅРµ РєРѕРїС–СЋРІР°С‚Рё Р№РѕРіРѕ.
+#      (РЈ BUILDвЂђСЃС‚Р°РґС–С— РјРё РІР¶Рµ РєРѕРїС–СЋРІР°Р»Рё РІРµСЃСЊ РєР°С‚Р°Р»РѕРє, РѕС‚РѕР¶ botConfig.json С‚Р°Рј С”.)
 
-# 6) Вказуємо команду запуску
-ENTRYPOINT ["dotnet", "SteamStoreBot.dll"]
+# 2.3) Р’РєР°Р·СѓС”РјРѕ РєРѕРјР°РЅРґСѓ Р·Р°РїСѓСЃРєСѓ (РєРѕРЅСЃРѕР»СЊРЅРёР№ .exe)
+ENTRYPOINT ["SteamStoreBot.exe"]
